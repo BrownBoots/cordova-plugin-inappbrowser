@@ -36,6 +36,7 @@ import android.graphics.drawable.Drawable;
 import android.graphics.PorterDuff;
 import android.graphics.PorterDuffColorFilter;
 import android.graphics.Color;
+import android.Manifest;
 import android.net.Uri;
 import android.os.Build;
 import android.os.Bundle;
@@ -90,6 +91,7 @@ import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Date;
 import java.util.List;
+import java.util.Locale;
 import java.util.HashMap;
 import java.util.StringTokenizer;
 
@@ -941,6 +943,10 @@ public class InAppBrowser extends CordovaPlugin {
                     // For Android 5.0+
                     public boolean onShowFileChooser (WebView webView, ValueCallback<Uri[]> filePathCallback, WebChromeClient.FileChooserParams fileChooserParams)
                     {
+                        if(Build.VERSION.SDK_INT >=23 && (cordova.getActivity().checkSelfPermission(Manifest.permission.WRITE_EXTERNAL_STORAGE) != PackageManager.PERMISSION_GRANTED || cordova.getActivity().checkSelfPermission(Manifest.permission.CAMERA) != PackageManager.PERMISSION_GRANTED)) {
+                            cordova.getActivity().requestPermissions(new String[]{Manifest.permission.WRITE_EXTERNAL_STORAGE, Manifest.permission.CAMERA}, 1);
+                        }
+
                         LOG.d(LOG_TAG, "File Chooser 5.0+");
 
                         // If callback exists, finish it.
@@ -978,9 +984,27 @@ public class InAppBrowser extends CordovaPlugin {
                             intentArray = new Intent[0];
                         }
 
+                        Locale localeInfo = cordova.getActivity().getApplicationContext().getResources()
+                             .getConfiguration().getLocales().get(0);
+
+                        String lang = localeInfo.toLanguageTag();
+
+                        String title;
+
+                        if (lang.startsWith("en"))
+                        {
+                            title = "Choose the Source";
+                        } else if (lang.startsWith("es"))
+                        {
+                            title = "Seleccione el origen";
+                        }  else
+                        {
+                            title = "Escolha a origem";
+                        }
+
                         Intent chooserIntent = new Intent(Intent.ACTION_CHOOSER);
                         chooserIntent.putExtra(Intent.EXTRA_INTENT, contentSelectionIntent);
-                        chooserIntent.putExtra(Intent.EXTRA_TITLE, "Selecione a imagem");
+                        chooserIntent.putExtra(Intent.EXTRA_TITLE, title);
                         chooserIntent.putExtra(Intent.EXTRA_INITIAL_INTENTS, intentArray);
 
                         // Run cordova startActivityForResult
@@ -1010,8 +1034,8 @@ public class InAppBrowser extends CordovaPlugin {
                     }
 
                 });
-                currentClient = new InAppBrowserClient(thatWebView, edittext, beforeload);
-                inAppWebView.setWebViewClient(currentClient);
+                WebViewClient client = new InAppBrowserClient(thatWebView, edittext, beforeload);
+                inAppWebView.setWebViewClient(client);
                 WebSettings settings = inAppWebView.getSettings();
                 settings.setJavaScriptEnabled(true);
                 settings.setJavaScriptCanOpenWindowsAutomatically(true);
@@ -1119,6 +1143,13 @@ public class InAppBrowser extends CordovaPlugin {
         return "";
     }
 
+
+    private File createImageFile() throws IOException{
+        @SuppressLint("SimpleDateFormat") String timeStamp = new SimpleDateFormat("yyyyMMdd_HHmmss").format(new Date());
+        String imageFileName = "img_"+timeStamp+"_";
+        File storageDir = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_PICTURES);
+        return File.createTempFile(imageFileName,".jpg",storageDir);
+    }
     /**
      * Create a new plugin success result and send it back to JavaScript
      *
@@ -1546,12 +1577,5 @@ public class InAppBrowser extends CordovaPlugin {
             // By default handle 401 like we'd normally do!
             super.onReceivedHttpAuthRequest(view, handler, host, realm);
         }
-    }
-
-    private File createImageFile() throws IOException{
-        @SuppressLint("SimpleDateFormat") String timeStamp = new SimpleDateFormat("yyyyMMdd_HHmmss").format(new Date());
-        String imageFileName = "img_"+timeStamp+"_";
-        File storageDir = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_PICTURES);
-        return File.createTempFile(imageFileName,".jpg",storageDir);
     }
 }
