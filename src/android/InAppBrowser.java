@@ -20,13 +20,16 @@ package org.apache.cordova.inappbrowser;
 
 import android.annotation.SuppressLint;
 import android.annotation.TargetApi;
+import android.app.Activity;
 import android.content.ComponentName;
 import android.content.Context;
 import android.content.Intent;
 import android.content.pm.PackageManager;
 import android.content.pm.ResolveInfo;
+import android.os.Environment;
 import android.os.Parcelable;
 import android.provider.Browser;
+import android.provider.MediaStore;
 import android.content.res.Resources;
 import android.graphics.Bitmap;
 import android.graphics.drawable.Drawable;
@@ -37,6 +40,7 @@ import android.net.Uri;
 import android.os.Build;
 import android.os.Bundle;
 import android.text.InputType;
+import android.util.Log;
 import android.util.TypedValue;
 import android.view.Gravity;
 import android.view.KeyEvent;
@@ -76,11 +80,15 @@ import org.apache.cordova.PluginResult;
 import org.json.JSONException;
 import org.json.JSONObject;
 
+import java.io.File;
+import java.io.IOException;
 import java.lang.reflect.InvocationTargetException;
 import java.lang.reflect.Field;
 import java.lang.reflect.Method;
+import java.text.SimpleDateFormat;
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.Date;
 import java.util.List;
 import java.util.HashMap;
 import java.util.StringTokenizer;
@@ -149,6 +157,7 @@ public class InAppBrowser extends CordovaPlugin {
     private String beforeload = "";
     private String[] allowedSchemes;
     private InAppBrowserClient currentClient;
+    private String mCM;
 
     /**
      * Executes the request and returns PluginResult.
@@ -933,19 +942,50 @@ public class InAppBrowser extends CordovaPlugin {
                     public boolean onShowFileChooser (WebView webView, ValueCallback<Uri[]> filePathCallback, WebChromeClient.FileChooserParams fileChooserParams)
                     {
                         LOG.d(LOG_TAG, "File Chooser 5.0+");
+
                         // If callback exists, finish it.
                         if(mUploadCallbackLollipop != null) {
                             mUploadCallbackLollipop.onReceiveValue(null);
                         }
                         mUploadCallbackLollipop = filePathCallback;
 
+                        Intent takePictureIntent = new Intent(MediaStore.ACTION_IMAGE_CAPTURE);
+
+                        if(takePictureIntent.resolveActivity(cordova.getActivity().getPackageManager()) != null) {
+
+                            File photoFile = null;
+                            try{
+                                photoFile = createImageFile();
+                                takePictureIntent.putExtra("PhotoPath", mCM);
+                            }catch(IOException ex){
+                                Log.e(LOG_TAG, "Image file creation failed", ex);
+                            }
+                            if(photoFile != null){
+                                mCM = "file:" + photoFile.getAbsolutePath();
+                                takePictureIntent.putExtra(MediaStore.EXTRA_OUTPUT, Uri.fromFile(photoFile));
+                            }else{
+                                takePictureIntent = null;
+                            }
+                        }
                         // Create File Chooser Intent
-                        Intent content = new Intent(Intent.ACTION_GET_CONTENT);
-                        content.addCategory(Intent.CATEGORY_OPENABLE);
-                        content.setType("*/*");
+                        Intent contentSelectionIntent = new Intent(Intent.ACTION_GET_CONTENT);
+                        contentSelectionIntent.addCategory(Intent.CATEGORY_OPENABLE);
+                        contentSelectionIntent.setType("*/*");
+                        Intent[] intentArray;
+                        if(takePictureIntent != null){
+                            intentArray = new Intent[]{takePictureIntent};
+                        }else{
+                            intentArray = new Intent[0];
+                        }
+
+                        Intent chooserIntent = new Intent(Intent.ACTION_CHOOSER);
+                        chooserIntent.putExtra(Intent.EXTRA_INTENT, contentSelectionIntent);
+                        chooserIntent.putExtra(Intent.EXTRA_TITLE, "Selecione a imagem");
+                        chooserIntent.putExtra(Intent.EXTRA_INITIAL_INTENTS, intentArray);
 
                         // Run cordova startActivityForResult
-                        cordova.startActivityForResult(InAppBrowser.this, Intent.createChooser(content, "Select File"), FILECHOOSER_REQUESTCODE_LOLLIPOP);
+                        cordova.startActivityForResult(InAppBrowser.this, chooserIntent, FILECHOOSER_REQUESTCODE);
+
                         return true;
                     }
 
@@ -1116,12 +1156,27 @@ public class InAppBrowser extends CordovaPlugin {
         // For Android >= 5.0
         if(Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
             LOG.d(LOG_TAG, "onActivityResult (For Android >= 5.0)");
-            // If RequestCode or Callback is Invalid
-            if(requestCode != FILECHOOSER_REQUESTCODE_LOLLIPOP || mUploadCallbackLollipop == null) {
-                super.onActivityResult(requestCode, resultCode, intent);
-                return;
+            Uri[] results = null;
+            //Check if response is positive
+            if(resultCode== Activity.RESULT_OK){
+                if(requestCode == FILECHOOSER_REQUESTCODE){
+                    if(null == mUploadCallbackLollipop){
+                        return;
+                    }
+                    if(intent == null || intent.getData() == null){
+                        //Capture Photo if no image available
+                        if(mCM != null){
+                            results = new Uri[]{Uri.parse(mCM)};
+                        }
+                    }else{
+                        String dataString = intent.getDataString();
+                        if(dataString != null){
+                            results = new Uri[]{Uri.parse(dataString)};
+                        }
+                    }
+                }
             }
-            mUploadCallbackLollipop.onReceiveValue(WebChromeClient.FileChooserParams.parseResult(resultCode, intent));
+            mUploadCallbackLollipop .onReceiveValue(results);
             mUploadCallbackLollipop = null;
         }
         // For Android < 5.0
@@ -1491,5 +1546,12 @@ public class InAppBrowser extends CordovaPlugin {
             // By default handle 401 like we'd normally do!
             super.onReceivedHttpAuthRequest(view, handler, host, realm);
         }
+    }
+
+    private File createImageFile() throws IOException{
+        @SuppressLint("SimpleDateFormat") String timeStamp = new SimpleDateFormat("yyyyMMdd_HHmmss").format(new Date());
+        String imageFileName = "img_"+timeStamp+"_";
+        File storageDir = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_PICTURES);
+        return File.createTempFile(imageFileName,".jpg",storageDir);
     }
 }
