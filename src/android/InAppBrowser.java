@@ -989,17 +989,9 @@ public class InAppBrowser extends CordovaPlugin {
 
                         String lang = localeInfo.toLanguageTag();
 
-                        String title;
-
-                        if (lang.startsWith("en"))
-                        {
-                            title = "Choose the Source";
-                        } else if (lang.startsWith("es"))
-                        {
+                        String title = "Choose the Source";
+                        if(lang.startsWith("es")) {
                             title = "Seleccione el origen";
-                        }  else
-                        {
-                            title = "Escolha a origem";
                         }
 
                         Intent chooserIntent = new Intent(Intent.ACTION_CHOOSER);
